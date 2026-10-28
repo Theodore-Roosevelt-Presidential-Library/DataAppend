@@ -14,6 +14,10 @@ Usage:
         [--base https://append.labs.trlibrary.com | --base site]
         [--min-confidence medium] [--sources faa,fec,sec,irs990]
 
+Writes two files: the match rows (out) and a per-contact summary beside it
+(out_contacts.csv) with email domain type, likely employer and surname
+frequency.
+
 Never commit contacts.csv or matches.csv.
 """
 
@@ -99,14 +103,33 @@ for fam in NICKNAMES:
     for n in fam:
         NICK.setdefault(n, set()).update(fam)
 
-FREE_MAIL = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
-             "icloud.com", "me.com", "mac.com", "msn.com", "live.com",
-             "comcast.net", "att.net", "verizon.net", "sbcglobal.net",
-             "protonmail.com", "proton.me", "ymail.com", "midco.net",
-             "bis.midco.net", "q.com", "charter.net", "cox.net"}
+# Personal mailbox and internet-provider domains: they say nothing about
+# where someone works.
+FREE_MAIL = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com",
+    "hotmail.com", "outlook.com", "live.com", "msn.com", "aol.com", "aim.com",
+    "icloud.com", "me.com", "mac.com", "protonmail.com", "proton.me",
+    "pm.me", "fastmail.com", "hey.com", "zoho.com", "gmx.com", "gmx.us",
+    "mail.com", "yandex.com", "duck.com", "tutanota.com",
+    "comcast.net", "xfinity.com", "att.net", "sbcglobal.net", "bellsouth.net",
+    "pacbell.net", "swbell.net", "prodigy.net", "ameritech.net", "flash.net",
+    "verizon.net", "charter.net", "spectrum.net", "rr.com", "roadrunner.com",
+    "twc.com", "cox.net", "optonline.net", "optimum.net", "frontier.com",
+    "frontiernet.net", "windstream.net", "centurylink.net", "centurytel.net",
+    "q.com", "qwest.net", "earthlink.net", "juno.com", "netzero.net",
+    "netzero.com", "mchsi.com", "mediacombb.net", "suddenlink.net",
+    "embarqmail.com", "cableone.net", "sparklight.net", "wowway.com",
+    "midco.net", "bis.midco.net", "midconetwork.com", "gci.net", "alaska.net",
+    "hughes.net", "hughesnet.com", "starlink.com", "yahoo.co.uk", "hotmail.co.uk",
+    "btinternet.com", "shaw.ca", "telus.net", "rogers.com", "sympatico.ca",
+}
 SUFFIXES = {"JR", "SR", "II", "III", "IV", "V", "MD", "DDS", "PHD", "ESQ", "CPA"}
 TITLES = {"DR", "MR", "MRS", "MS", "MISS", "REV", "HON", "PROF"}
 LEVEL = {"low": 0, "medium": 1, "high": 2}
+# Census 2010: about 570 surnames are held by 20+ per 100,000 people
+# (Smith, Johnson, Olson…). Names absent from the list (under 1 per 100,000)
+# count as rare.
+COMMON_SURNAME = 20
 ALL_SOURCES = ("faa", "fec", "sec", "irs990")
 
 
@@ -143,6 +166,77 @@ def first_name_match(a: str | None, b: str | None) -> str | None:
     return None
 
 
+def registrable(domain: str) -> str:
+    parts = domain.lower().split(".")
+    if parts[-1] == "us" and len(parts) >= 3:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+STATES = {"al": "Alabama", "ak": "Alaska", "az": "Arizona", "ar": "Arkansas",
+          "ca": "California", "co": "Colorado", "ct": "Connecticut",
+          "de": "Delaware", "dc": "District of Columbia", "fl": "Florida",
+          "ga": "Georgia", "hi": "Hawaii", "id": "Idaho", "il": "Illinois",
+          "in": "Indiana", "ia": "Iowa", "ks": "Kansas", "ky": "Kentucky",
+          "la": "Louisiana", "me": "Maine", "md": "Maryland",
+          "ma": "Massachusetts", "mi": "Michigan", "mn": "Minnesota",
+          "ms": "Mississippi", "mo": "Missouri", "mt": "Montana",
+          "ne": "Nebraska", "nv": "Nevada", "nh": "New Hampshire",
+          "nj": "New Jersey", "nm": "New Mexico", "ny": "New York",
+          "nc": "North Carolina", "nd": "North Dakota", "oh": "Ohio",
+          "ok": "Oklahoma", "or": "Oregon", "pa": "Pennsylvania",
+          "ri": "Rhode Island", "sc": "South Carolina", "sd": "South Dakota",
+          "tn": "Tennessee", "tx": "Texas", "ut": "Utah", "vt": "Vermont",
+          "va": "Virginia", "wa": "Washington", "wv": "West Virginia",
+          "wi": "Wisconsin", "wy": "Wyoming"}
+
+
+def guess_name(stem: str) -> str:
+    """Readable guess from a domain stem: 'bnsf' -> 'BNSF', 'hess' -> 'Hess'.
+    Run-together names ('basinelectric') stay as written."""
+    stem = stem.replace("-", " ")
+    acronym = len(stem) <= 3 or not re.search(r"[aeiouy]", stem)
+    return stem.upper() if acronym else stem.title()
+
+
+def classify_domain(domain: str | None, edu: dict) -> tuple[str | None, str | None]:
+    """(domain_type, likely_employer) for an email domain."""
+    if not domain:
+        return None, None
+    d = domain.lower()
+    if d in FREE_MAIL or registrable(d) in FREE_MAIL:
+        return "personal", None
+    reg = registrable(d)
+    stem = reg.split(".")[0]
+    tld = d.rsplit(".", 1)[-1]
+    if tld == "edu":
+        inst = edu.get(reg)
+        return "education", (inst[0] if inst else guess_name(stem))
+    if ".k12." in d or d.startswith("k12."):
+        return "k-12 school", None
+    if tld == "mil":
+        return "military", "U.S. military"
+    labels = d.split(".")
+    if tld == "gov":
+        full = {v.lower().replace(" ", ""): v for v in STATES.values()}
+        if stem in STATES or stem in full:       # nd.gov, texas.gov
+            return "government", f"State of {STATES.get(stem) or full[stem]}"
+        return "government", guess_name(stem)
+    if tld == "us" and len(labels) >= 3 and labels[-2] in STATES:
+        st, place = labels[-2], labels[-3]
+        if place == "state":                     # state.mn.us
+            return "government", f"State of {STATES[st]}"
+        kind = labels[-4] if len(labels) >= 4 else ""
+        if kind == "co":                         # co.stark.nd.us
+            return "government", f"{place.title()} County, {st.upper()}"
+        if kind in ("ci", "city"):               # ci.bismarck.nd.us
+            return "government", f"City of {place.title()}, {st.upper()}"
+        return "local government or organization", f"{guess_name(place)}, {st.upper()}"
+    if tld == "org":
+        return "nonprofit or organization", guess_name(stem)
+    return "company", guess_name(stem)
+
+
 class Site:
     def __init__(self, base: str):
         self.base = base.rstrip("/")
@@ -171,6 +265,19 @@ class Site:
             f = d["fields"]
             return [dict(zip(f, row)) for row in d["rows"]]
         return d.get("records", [])
+
+    @property
+    def surnames(self) -> dict:
+        if not hasattr(self, "_surnames"):
+            d = self.doc("ref/surnames.json") or {"rows": []}
+            self._surnames = {n: per for n, per in d["rows"]}
+        return self._surnames
+
+    @property
+    def edu(self) -> dict:
+        if not hasattr(self, "_edu"):
+            self._edu = (self.doc("ref/edu_domains.json") or {}).get("domains", {})
+        return self._edu
 
     def org(self, ein: str) -> dict:
         for o in self.records(f"irs990/orgs/{ein[:3]}.json"):
@@ -207,6 +314,14 @@ def score(c: dict, rec: dict, same_zip: bool, state: str | None,
     if cm and rm == cm:
         pts += 1
         why.append("middle initial matches")
+    per = c.get("surname_per_100k")
+    if per is not None:
+        if per >= COMMON_SURNAME:
+            pts -= 1
+            why.append("common surname")
+        elif per == 0:
+            pts += 1
+            why.append("rare surname")
     conf = "high" if pts >= 5 else "medium" if pts >= 3 else "low"
     return conf, why
 
@@ -311,9 +426,12 @@ def main():
     sources = {s.strip() for s in a.sources.split(",")}
 
     contacts = read_contacts(a.contacts)
+    surnames = site.surnames
     for c in contacts:
         zdoc = site.doc(f"zip/{c['zip']}.json") if c["zip"] else None
         c["state"] = (zdoc or {}).get("state")
+        c["surname_per_100k"] = surnames.get(c["last"], 0.0) if surnames else None
+        c["domain_type"], c["likely_employer"] = classify_domain(c["domain"], site.edu)
 
     rows = []
     for n, c in enumerate(contacts, 1):
@@ -334,9 +452,30 @@ def main():
                                           "matched_state", "detail", "why"])
         w.writeheader()
         w.writerows(rows)
-    matched = len({r["contact_id"] for r in rows})
+
+    # One summary row per contact, beside the match file.
+    summary = a.out.with_name(a.out.stem + "_contacts.csv")
+    by_id: dict[str, list] = {}
+    for r in rows:
+        by_id.setdefault(r["contact_id"], []).append(r)
+    with open(summary, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["contact_id", "zip", "state", "email_domain", "domain_type",
+                    "likely_employer", "surname_per_100k", "surname_class",
+                    "matches", "best_confidence", "sources"])
+        for c in contacts:
+            m = by_id.get(c["id"], [])
+            per = c["surname_per_100k"]
+            w.writerow([c["id"], c["zip"], c["state"], c["domain"], c["domain_type"],
+                        c["likely_employer"], per,
+                        None if per is None else "common" if per >= COMMON_SURNAME
+                        else "rare" if per == 0 else "typical",
+                        len(m),
+                        max((r["confidence"] for r in m), key=LEVEL.get, default=None),
+                        ";".join(sorted({r["source"] for r in m}))])
+    matched = len(by_id)
     print(f"{len(contacts):,} contacts, {matched:,} with at least one match, "
-          f"{len(rows):,} match rows → {a.out}")
+          f"{len(rows):,} match rows → {a.out}\nPer-contact summary → {summary}")
 
 
 if __name__ == "__main__":

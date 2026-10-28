@@ -132,6 +132,8 @@ addresses, and every folder has a `meta.json` with source, date and scope.
 | `fec/donors/{ZIP}.json` | FEC individual contributions, current two-year cycle | ZIP reported with the gift | One row per contributor name and ZIP: city, approximate total, number of gift records, first and last gift date, latest employer and occupation. No recipients. |
 | `irs990/people/{AB}.json` | IRS 990 and 990-PF e-file data, last full processing year | First two letters of surname | Board members and officers of 990 filers with $1M+ in assets or revenue, and all private-foundation (990-PF) officers and trustees: name, title, compensation, EIN, and home city/state/ZIP where filed (mostly 990-PF) |
 | `irs990/orgs/{123}.json` | Same | First three digits of EIN | Organization name, city, state, form, tax year, total assets, revenue, grants paid (990-PF) |
+| `ref/surnames.json` | Census 2010 surnames | — | Surname and how many people per 100,000 hold it (names held by fewer than 1 in 100,000 are left out and count as rare). Demographic columns in the source are not published. |
+| `ref/edu_domains.json` | NCES IPEDS institutional directory | — | College web domain to institution name, city and state (multi-campus systems resolve to the system name) |
 
 **How the big sources are cut down.** FEC's 35 million gift records per cycle
 become about 2.35 million rows, one per person and ZIP. Memo entries are
@@ -192,7 +194,23 @@ details leave the machine. Each match carries a confidence level:
 - Same ZIP (+2) or same state (+1). A name with neither is not a match.
 - Different middle initials rule a match out; the same one adds 1.
 - Email domain matching an SEC issuer, FEC employer or 990 organization (+2)
+- Common surname, held by 20+ per 100,000 people such as Smith or Olson (−1);
+  rare surname, not on the Census list (+1)
 - High = 5 or more, medium = 3–4, low = under 3. Default output is medium and up.
+
+Besides the match rows, the matcher writes `matches_contacts.csv`, one row per
+contact with:
+
+- **domain_type**: personal (Gmail, Yahoo, internet providers such as Midco),
+  education, k-12 school, government, military, nonprofit or organization,
+  or company
+- **likely_employer**: the college name for .edu addresses (from IPEDS),
+  "State of North Dakota" for nd.gov, "Stark County, ND" for co.stark.nd.us,
+  otherwise a readable form of the domain (bnsf.com → BNSF, hess.com → Hess).
+  Treat it as a lead: someone at a company domain could be a contractor, and
+  run-together names (basinelectric.com) stay as written.
+- **surname_per_100k / surname_class**: common, typical or rare
+- **matches, best_confidence, sources**
 
 On a synthetic test of 300 real records (100 each from FAA, FEC and 990-PF)
 plus 200 invented people with common surnames in the same ZIPs, it matched all

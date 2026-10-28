@@ -601,12 +601,104 @@ def build_irs990(out: Path, year: int | None):
     })
 
 
+# ---------------------------------------------------------------- reference files
+
+SURNAMES_URL = "https://www2.census.gov/topics/genealogy/2010surnames/names.zip"
+IPEDS_URL = "https://nces.ed.gov/ipeds/datacenter/data/HD{y}.zip"
+
+
+def registrable(host: str) -> str | None:
+    """'https://www.uab.edu/path' -> 'uab.edu'; keeps 3 labels for k12/us style."""
+    host = re.sub(r"^[a-z]+://", "", (host or "").strip().lower()).split("/")[0]
+    host = host.split(":")[0].removeprefix("www.")
+    parts = [p for p in host.split(".") if p]
+    if len(parts) < 2:
+        return None
+    if parts[-1] == "us" and len(parts) >= 3:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def resolve_campuses(cands: list) -> list:
+    """Pick one institution for a domain several campuses share.
+
+    The school whose own web address is the bare domain wins (ndsu.edu).
+    Otherwise, campuses named 'X-Campus' share the system name 'X'
+    (twin-cities.umn.edu, d.umn.edu -> University of Minnesota).
+    """
+    exact = [i for e, i in cands if e]
+    if len(cands) == 1 or len(exact) == 1:
+        return (exact or [cands[0][1]])[0]
+    systems = {i[0].split("-")[0].strip() for _, i in cands}
+    if len(systems) == 1 and all("-" in i[0] for _, i in cands):
+        st = {i[2] for _, i in cands}
+        return [systems.pop(), None, st.pop() if len(st) == 1 else None]
+    return min((i for _, i in cands), key=lambda i: len(i[0]))
+
+
+def build_ref(out: Path):
+    print("Reference files (surname frequency, college domains)…", flush=True)
+    base = out / "ref"
+    base.mkdir(parents=True, exist_ok=True)
+    # Census 2010 surnames: name and frequency only (no demographic columns).
+    p = fetch(SURNAMES_URL, RAW / "ref" / "names_2010.zip", TOOL_UA)
+    if p and zipfile.is_zipfile(p):
+        with zipfile.ZipFile(p) as z:
+            name = next(n for n in z.namelist() if n.endswith(".csv"))
+            rows = []
+            for r in csv.DictReader(io.TextIOWrapper(z.open(name), encoding="utf-8-sig")):
+                try:
+                    per = float(r["prop100k"])
+                except ValueError:
+                    continue
+                if r["name"] != "ALL OTHER NAMES" and per >= 1:
+                    rows.append([r["name"], per])
+        with open(base / "surnames.json", "w") as f:
+            json.dump({"source": "U.S. Census Bureau, 2010 Census surnames",
+                       "source_url": "https://www.census.gov/topics/population/genealogy/data/2010_surnames.html",
+                       "scope": "Surnames held by at least 1 in 100,000 people; any "
+                                "surname not listed is rarer than that",
+                       "fields": ["surname", "per_100k"], "rows": rows},
+                      f, separators=(",", ":"))
+        print(f"  surnames: {len(rows):,}", flush=True)
+    # IPEDS institutional directory: college website domain -> institution.
+    today = dt.date.today()
+    for y in range(today.year - 1, today.year - 5, -1):
+        p = fetch(IPEDS_URL.format(y=y), RAW / "ref" / f"HD{y}.zip", TOOL_UA)
+        if p and zipfile.is_zipfile(p):
+            break
+    else:
+        p = None
+    if p:
+        doms = {}
+        with zipfile.ZipFile(p) as z:
+            name = next(n for n in z.namelist() if n.lower().endswith(".csv"))
+            for r in csv.DictReader(io.TextIOWrapper(z.open(name), encoding="latin-1")):
+                r = {k.lstrip("\ufeff").lstrip("ï»¿"): v for k, v in r.items()}
+                web = r.get("WEBADDR", "")
+                d = registrable(web)
+                if not d:
+                    continue
+                host = re.sub(r"^[a-z]+://", "", web.strip().lower()).split("/")[0]
+                exact = host.removeprefix("www.") == d
+                inst = [re.sub(r"-Main Campus$", "", clean(r["INSTNM"])),
+                        clean(r["CITY"]), r["STABBR"]]
+                doms.setdefault(d, []).append((exact, inst))
+        with open(base / "edu_domains.json", "w") as f:
+            json.dump({"source": f"NCES IPEDS institutional characteristics (HD{y})",
+                       "source_url": "https://nces.ed.gov/ipeds/",
+                       "fields": ["institution", "city", "state"],
+                       "domains": {d: resolve_campuses(v) for d, v in doms.items()}},
+                      f, separators=(",", ":"))
+        print(f"  college domains: {len(doms):,}", flush=True)
+
+
 # ---------------------------------------------------------------- main
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default=str(ROOT / "site"))
-    ap.add_argument("--sources", default="faa,sec,fec,irs990")
+    ap.add_argument("--sources", default="ref,faa,sec,fec,irs990")
     ap.add_argument("--fec-cycles", type=int, default=1)
     ap.add_argument("--irs-year", type=int,
                     help="IRS processing year (default: last full year)")
@@ -616,7 +708,8 @@ def main():
     out = Path(a.out)
     src = {s.strip() for s in a.sources.split(",")}
     # One source failing must not stop the others or the site deploy.
-    for name, fn in (("faa", lambda: build_faa(out, a.faa_zip)),
+    for name, fn in (("ref", lambda: build_ref(out)),
+                     ("faa", lambda: build_faa(out, a.faa_zip)),
                      ("sec", lambda: build_sec(out, a.sec_quarters)),
                      ("fec", lambda: build_fec(out, a.fec_cycles)),
                      ("irs990", lambda: build_irs990(out, a.irs_year))):
