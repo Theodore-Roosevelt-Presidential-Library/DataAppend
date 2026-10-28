@@ -1,0 +1,13 @@
+# Downloaded source data and build output (rebuilt by the GitHub Action)
+data/raw/
+site/
+
+# Never commit contact data or credentials
+*.env
+.env*
+contacts*
+exports/
+
+.venv/
+__pycache__/
+.DS_Store

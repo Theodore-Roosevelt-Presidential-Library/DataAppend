@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataAppend · ZIP Reference</title>
+<meta name="description" content="Free ZIP-level reference data from the Census Bureau and IRS, served as a static JSON API by the Theodore Roosevelt Presidential Library.">
+<style>
+  :root {
+    --ink: #25282A; --green: #1B4532; --navy: #092A4D; --sand: #D1CCBD;
+    --paper: #FBFAF7; --line: #E4E0D6; --muted: #5E625F; --accent: #E7805D;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 Frutiger, "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { background: var(--green); color: #fff; padding: 40px 0 32px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+  h1, h2 { font-family: "ITC Clearface", Georgia, "Times New Roman", serif; font-weight: 600; }
+  h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; color: #DCE6DF; max-width: 640px; }
+  h2 { font-size: 1.4rem; margin: 40px 0 12px; color: var(--green); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }
+  pre { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .lookup { display: flex; gap: 8px; margin: 24px 0 8px; flex-wrap: wrap; }
+  .lookup input { flex: 1 1 160px; padding: 10px 12px; font-size: 1.05rem; border: 1px solid var(--sand); border-radius: 6px; }
+  .lookup button { padding: 10px 18px; font-size: 1rem; border: 0; border-radius: 6px; background: var(--navy); color: #fff; cursor: pointer; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-top: 12px; }
+  .card h3 { margin: 0 0 4px; font-size: 1.15rem; }
+  .tier { display: inline-block; min-width: 2.2em; text-align: center; padding: 2px 8px; border-radius: 4px; background: var(--green); color: #fff; font-weight: 700; }
+  dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; margin: 12px 0 0; }
+  dt { color: var(--muted); } dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: .9rem; }
+  .flag { color: #9A4A2E; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tablewrap { overflow-x: auto; }
+  footer { margin: 48px 0 32px; color: var(--muted); font-size: .85rem; }
+  a { color: var(--navy); }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>DataAppend ZIP Reference</h1>
+  <p>Neighborhood-level income, education, age, housing and giving context for every U.S. ZIP code, built from free Census Bureau, IRS and USDA data and served as a static JSON API.</p>
+</div></header>
+
+<main class="wrap">
+  <form class="lookup" id="f">
+    <input id="z" inputmode="numeric" pattern="\d{5}" maxlength="5" placeholder="Enter a ZIP, e.g. 58645" aria-label="ZIP code" required>
+    <button>Look up</button>
+  </form>
+  <div id="out"></div>
+
+  <h2>Using the API</h2>
+  <p>Every file is static and public. No key, no rate limit beyond GitHub Pages.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Path</th><th>Returns</th></tr>
+    <tr><td><code>zip/{ZIP}.json</code></td><td>One ZIP's record. A 404 means the ZIP isn't in any of the source files.</td></tr>
+    <tr><td><code>zips.csv</code></td><td>All ZIPs in one flat file, for batch joins.</td></tr>
+    <tr><td><code>meta.json</code></td><td>Build date, data vintages and source URLs.</td></tr>
+  </table></div>
+  <pre>fetch("zip/58645.json").then(r =&gt; r.json())
+
+curl -s https://&lt;this-site&gt;/zip/58645.json</pre>
+
+  <h2>Fields</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td><code>mail_city, state</code></td><td>Post office name for the ZIP (the mailing city).</td></tr>
+    <tr><td><code>place, county</code></td><td>Incorporated city (or Census place) and county with the most land overlap.</td></tr>
+    <tr><td><code>zip_type</code></td><td><code>area</code> for residential ZIPs; <code>po_box_or_unique</code> for PO-box and large-organization ZIPs, which carry no Census or IRS figures.</td></tr>
+    <tr><td><code>ruca, urban_rural</code></td><td>USDA Rural-Urban Commuting Area code (1–10) and its class: metro, micro, small town or rural.</td></tr>
+    <tr><td><code>miles_to_library, distance_band</code></td><td>Straight-line miles from Medora to the ZIP's center, grouped as local, regional drive, long drive, fly-in. For PO-box ZIPs the point is borrowed from the same town's residential ZIP, named in <code>point_from_zip</code>.</td></tr>
+    <tr><td><code>acs.*</code></td><td>Census American Community Survey 5-year estimates: population, median age, median household income (with a reliability grade from its margin of error), per-capita income, share of households earning $200K+, median home value, owner-occupancy, bachelor's and graduate degree shares, and shares of residents 65 and older, of adults who are veterans, and of households with children.</td></tr>
+    <tr><td><code>acs.top_coded</code></td><td>Medians the Census caps: 250,001 means $250,000 or more; 2,000,001 means $2 million or more.</td></tr>
+    <tr><td><code>irs.*</code></td><td>IRS Statistics of Income: returns filed, average adjusted gross income, share of returns over $200K, with dividends, with capital gains, and itemizing charitable gifts, plus the average itemized charitable deduction; shares of returns with pension income, IRA distributions, business (Schedule C) income, and partnership or S-corporation income; and average real-estate taxes among itemizers.</td></tr>
+    <tr><td><code>index.affluence_percentile, tier</code></td><td>National percentile (1–100) of a composite of five measures; tiers A (90+), B (75–89), C (50–74), D (25–49), E (under 25).</td></tr>
+  </table></div>
+
+  <h2>How to read it</h2>
+  <p>These figures describe a <strong>neighborhood</strong>, not a person. A Tier A ZIP is a reason to look closer at a contact, never evidence of that contact's wealth. Use them for segmentation, regional planning and prioritizing research, and never in copy addressed to an individual.</p>
+  <ul>
+    <li><strong>Small places are noisy.</strong> Records flag <code>small_population</code> (under 500 people) and <code>small_sample</code> (under 250 tax returns). The IRS rounds counts and suppresses small cells, so a small ZIP can show 0% where the true figure is low but not zero.</li>
+    <li><strong>Itemized figures undercount.</strong> Since 2018 most households take the standard deduction, so <code>pct_returns_itemizing_charity</code> and <code>avg_itemized_real_estate_taxes</code> mostly reflect higher-income itemizers. Compare ZIPs with it; don't read it as a giving rate.</li>
+    <li><strong>ZIP and ZCTA differ slightly.</strong> Census data is by ZIP Code Tabulation Area, IRS data by postal ZIP. They match for most residential ZIPs.</li>
+    <li><strong>The index</strong> averages national percentile ranks of median household income, share of households at $200K+, median home value, share with a bachelor's degree, and IRS average AGI (skipped for small samples), then ranks that average again. ZIPs under 200 people, or with fewer than three usable measures, get no index.</li>
+  </ul>
+
+  <h2>Sources</h2>
+  <p id="src" class="note">Loading…</p>
+
+  <footer>Theodore Roosevelt Presidential Library · Public data only; no personal information is collected or published here. Code: <a href="https://github.com/Theodore-Roosevelt-Presidential-Library/DataAppend">GitHub</a>.</footer>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const usd = n => n == null ? "—" : "$" + n.toLocaleString("en-US");
+const pc = n => n == null ? "—" : n + "%";
+const val = (n, f) => n == null ? "—" : f(n);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(d) {
+  const a = d.acs || {}, i = d.irs || {}, x = d.index;
+  const where = [d.mail_city || d.place, d.county, d.state].filter(Boolean).map(esc).join(", ");
+  const flags = [];
+  if (a.small_population) flags.push("small population");
+  if (i.small_sample) flags.push("small IRS sample");
+  if (d.zip_type === "po_box_or_unique") flags.push("PO-box or single-organization ZIP; no neighborhood figures");
+  if (a.median_household_income_reliability === "low") flags.push("income estimate unreliable");
+  (a.top_coded || []).forEach(k => flags.push(k.replace(/_/g, " ") + " is top-coded"));
+  const rows = [
+    ["Miles from the Library", val(d.miles_to_library, n => n.toLocaleString() + " (" + esc(d.distance_band) + ")")],
+    ["Urban or rural", d.urban_rural ? esc(d.urban_rural) + " (RUCA " + d.ruca + ")" : "—"],
+    ["Population", val(a.population, n => n.toLocaleString())],
+    ["Median age", val(a.median_age, String)],
+    ["Median household income", usd(a.median_household_income) + (a.median_household_income_reliability ? " · " + a.median_household_income_reliability + " reliability" : "")],
+    ["Per-capita income", usd(a.per_capita_income)],
+    ["Households earning $200K+", pc(a.pct_households_200k_plus)],
+    ["Median home value", usd(a.median_home_value)],
+    ["Owner-occupied homes", pc(a.pct_owner_occupied)],
+    ["Bachelor's degree or higher", pc(a.pct_bachelors_plus)],
+    ["Graduate degree", pc(a.pct_graduate_degree)],
+    ["Residents 65 and older", pc(a.pct_age_65_plus)],
+    ["Adults who are veterans", pc(a.pct_veterans)],
+    ["Households with children", pc(a.pct_households_with_children)],
+    ["IRS returns filed", val(i.returns, n => n.toLocaleString())],
+    ["Average adjusted gross income", usd(i.avg_agi)],
+    ["Returns over $200K", pc(i.pct_returns_200k_plus)],
+    ["Returns with dividends", pc(i.pct_returns_with_dividends)],
+    ["Returns with capital gains", pc(i.pct_returns_with_capital_gains)],
+    ["Returns itemizing charitable gifts", pc(i.pct_returns_itemizing_charity)],
+    ["Average itemized charitable deduction", usd(i.avg_itemized_charitable_deduction)],
+    ["Returns with pension income", pc(i.pct_returns_with_pension_income)],
+    ["Returns with IRA distributions", pc(i.pct_returns_with_ira_distributions)],
+    ["Returns with business income", pc(i.pct_returns_with_business_income)],
+    ["Returns with partnership or S-corp income", pc(i.pct_returns_with_partnership_scorp_income)],
+    ["Average real-estate taxes (itemizers)", usd(i.avg_itemized_real_estate_taxes)],
+  ];
+  $("#out").innerHTML = `<div class="card">
+    <h3>${esc(d.zip)}${where ? " · " + where : ""}</h3>
+    <div>${x ? `<span class="tier">${x.tier}</span> Affluence percentile ${x.affluence_percentile}` : `<span class="note">No affluence index (too little data)</span>`}</div>
+    ${flags.length ? `<p class="flag note">Read with care: ${flags.map(esc).join("; ")}.</p>` : ""}
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+    <p class="note"><a href="zip/${esc(d.zip)}.json">Raw JSON</a></p>
+  </div>`;
+}
+
+$("#f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const z = $("#z").value.trim();
+  if (!/^\d{5}$/.test(z)) return;
+  history.replaceState(null, "", "#" + z);
+  $("#out").innerHTML = `<p class="note">Looking up ${z}…</p>`;
+  try {
+    const r = await fetch(`zip/${z}.json`);
+    if (!r.ok) throw 0;
+    render(await r.json());
+  } catch {
+    $("#out").innerHTML = `<div class="card">${z} isn't in the Census, IRS or USDA ZIP files.</div>`;
+  }
+});
+
+fetch("meta.json").then(r => r.json()).then(m => {
+  const s = m.sources;
+  $("#src").innerHTML = [s.acs.name, s.irs.name, s.ruca.name, s.geography.name].map(esc).join(". ") +
+    `. Built ${esc(m.built.slice(0, 10))}; ${m.zip_count.toLocaleString()} ZIPs. <a href="meta.json">meta.json</a>`;
+}).catch(() => { $("#src").textContent = "See meta.json."; });
+
+function fromHash() {
+  const h = location.hash.slice(1);
+  if (/^\d{5}$/.test(h) && h !== $("#z").dataset.shown) {
+    $("#z").value = h; $("#z").dataset.shown = h; $("#f").requestSubmit();
+  }
+}
+window.addEventListener("hashchange", fromHash);
+fromHash();
+</script>
+</body>
+</html>

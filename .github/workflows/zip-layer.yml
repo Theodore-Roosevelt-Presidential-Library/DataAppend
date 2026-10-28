@@ -1,0 +1,66 @@
+name: Build ZIP reference layer
+
+# Rebuilds the public ZIP-level data from Census and IRS bulk files and
+# publishes it to GitHub Pages. Runs monthly (picks up new data vintages
+# automatically), on demand, and when the pipeline or page changes.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 3 * *"   # 3rd of each month, 09:23 UTC
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - "web/**"
+      - ".github/workflows/zip-layer.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Raw downloads (~500 MB) are cached between runs; file names carry
+      # their data vintage, so a new release downloads fresh.
+      - uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: raw-${{ github.run_id }}
+          restore-keys: raw-
+
+      - name: Build
+        run: python pipeline/build_zip_layer.py --out site
+
+      - name: Sanity check
+        run: |
+          test -f site/zip/58645.json
+          test "$(ls site/zip | wc -l)" -gt 30000
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
