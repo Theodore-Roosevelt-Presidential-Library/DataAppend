@@ -9,7 +9,7 @@ identification. It is being built in layers, starting with free public data.
 | Layer | What it adds | Where it runs | Status |
 |---|---|---|---|
 | 1. ZIP reference | Neighborhood income, education, age, housing and giving context, urban/rural class and distance from Medora for every U.S. ZIP, including PO-box ZIPs | This repo → GitHub Pages (public, aggregate data only) | Built |
-| 2. Person-level public records | FAA aircraft owners, SEC insiders (built); FEC, NPPES, IRS 990 officers (planned) | This repo → GitHub Pages, one folder per source | In progress |
+| 2. Person-level public records | FAA aircraft owners, SEC insiders, FEC donors, IRS 990 board members and foundation trustees (built); NPPES providers (waiting on CMS) | This repo → GitHub Pages, one folder per source | Built |
 | 3. Matching | Compares the Library's contacts with layer 2 locally | Private: your Mac, homelab or a private repo | Built (`pipeline/match_people.py`) |
 
 **Standing rule:** the Library's own contact data (contact exports, match
@@ -129,6 +129,25 @@ addresses, and every folder has a `meta.json` with source, date and scope.
 |---|---|---|---|
 | `faa/aircraft/{ZIP}.json` | FAA Aircraft Registry | ZIP of registered address | Individual and co-owner registrations: name, city, state, N-number, make, model, year, aircraft and engine type, seats |
 | `sec/insiders/{AB}.json` | SEC Insider Transactions Data Sets (Forms 3/4/5), last 4 quarters | First two letters of surname | Officers, directors and 10% owners: name, filing city/state/ZIP, issuer, ticker, relationship, title, last filing date |
+| `fec/donors/{ZIP}.json` | FEC individual contributions, current two-year cycle | ZIP reported with the gift | One row per contributor name and ZIP: city, approximate total, number of gift records, first and last gift date, latest employer and occupation. No recipients. |
+| `irs990/people/{AB}.json` | IRS 990 and 990-PF e-file data, last full processing year | First two letters of surname | Board members and officers of 990 filers with $1M+ in assets or revenue, and all private-foundation (990-PF) officers and trustees: name, title, compensation, EIN, and home city/state/ZIP where filed (mostly 990-PF) |
+| `irs990/orgs/{123}.json` | Same | First three digits of EIN | Organization name, city, state, form, tax year, total assets, revenue, grants paid (990-PF) |
+
+**How the big sources are cut down.** FEC's 35 million gift records per cycle
+become about 2.35 million rows, one per person and ZIP. Memo entries are
+dropped, and gifts routed through ActBlue or WinRed count only when the
+recipient's own record is missing, so totals aren't doubled. A year of 990
+filings (about 4 GB of XML) becomes roughly 2.6 million board and trustee rows.
+Each organization is stored once and joined by EIN. Paid staff listed only as
+key employees, small organizations (990-EZ filers and 990 filers under $1M) and
+corporate trustees such as banks are left out. FEC and 990 files list field
+names once, then rows as arrays. The site stays under GitHub Pages' 1 GB limit
+(about 600 MB in all). Earlier FEC cycles can be added with `--fec-cycles 2`,
+but that roughly doubles the FEC folder.
+
+FEC files carry the FEC's notice: contributor information may not be sold or
+used to solicit contributions or for commercial purposes (52 U.S.C.
+30111(a)(4)).
 
 Downloads identify themselves as this tool. Two sources need care:
 
@@ -170,14 +189,16 @@ fetches only the shard files it needs, by ZIP or surname prefix, so no contact
 details leave the machine. Each match carries a confidence level:
 
 - First name exact (3), nickname such as Bill/William (2), or initial (1)
-- Same ZIP (+2) or same state (+1)
-- Email domain matches an SEC issuer (+2)
+- Same ZIP (+2) or same state (+1). A name with neither is not a match.
+- Different middle initials rule a match out; the same one adds 1.
+- Email domain matching an SEC issuer, FEC employer or 990 organization (+2)
 - High = 5 or more, medium = 3–4, low = under 3. Default output is medium and up.
 
-On a synthetic test of 200 aircraft owners (with nicknames, initials and
-dropped leading zeros) and 200 invented people in the same ZIPs, it matched
-all 200 owners and none of the invented people. Real lists will match less
-often because people move and change names.
+On a synthetic test of 300 real records (100 each from FAA, FEC and 990-PF)
+plus 200 invented people with common surnames in the same ZIPs, it matched all
+FAA and FEC records, every 990-PF trustee who is a person, and none of the
+invented people. Real lists will match less often because people move and
+change names.
 
 Never commit `contacts*.csv` or `matches*.csv` (both are in `.gitignore`).
 
