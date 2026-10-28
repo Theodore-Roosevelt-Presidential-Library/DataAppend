@@ -136,20 +136,24 @@ Downloads identify themselves as this tool. Two sources need care:
   is refreshed by hand (monthly is plenty) and attached to the `faa-data`
   release, where the Action picks it up:
 
+  Download https://registry.faa.gov/database/ReleasableAircraft.zip in a
+  browser (the FAA also refuses `curl`, and saves a block page under the
+  zip's name). Check it is about 70 MB, then:
+
   ```bash
-  cd ~/Developer/DataAppend
-  curl -L -o ReleasableAircraft.zip https://registry.faa.gov/database/ReleasableAircraft.zip
+  cd ~/Downloads
   # First time only:
   gh release create faa-data ReleasableAircraft.zip --title "FAA registry input" \
-      --notes "FAA releasable aircraft database, downloaded by hand."
+      --notes "FAA releasable aircraft database, downloaded by hand." \
+      -R Theodore-Roosevelt-Presidential-Library/DataAppend
   # Every later refresh:
-  gh release upload faa-data ReleasableAircraft.zip --clobber
-  gh workflow run zip-layer.yml
-  rm ReleasableAircraft.zip
+  gh release upload faa-data ReleasableAircraft.zip --clobber \
+      -R Theodore-Roosevelt-Presidential-Library/DataAppend
+  gh workflow run zip-layer.yml -R Theodore-Roosevelt-Presidential-Library/DataAppend
   ```
 
-  If `curl` is refused, open the URL in a browser instead; the file lands in
-  Downloads. Without the GitHub CLI, upload it on the repo's Releases page.
+  Without the GitHub CLI, upload it on the repo's Releases page. If a bad file
+  is attached, the build logs a warning and skips the FAA layer.
 - **SEC** requires a real contact email in the User-Agent under its fair-access
   policy. Set the repository secret `SEC_USER_AGENT` to
   `TRPL DataAppend name@trlibrary.com`.

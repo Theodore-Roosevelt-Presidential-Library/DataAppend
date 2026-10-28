@@ -134,10 +134,12 @@ ENGINE_TYPE = {"0": "none", "1": "reciprocating", "2": "turbo-prop",
 def build_faa(out: Path, zpath: Path | None):
     print("FAA Aircraft Registry…", flush=True)
     zpath = zpath or fetch(FAA_URL, RAW / "faa" / "ReleasableAircraft.zip", TOOL_UA)
-    if not zpath or not zpath.exists():
-        print("  ! no FAA file. The FAA blocks automated downloads from cloud "
-              "servers; download ReleasableAircraft.zip from "
-              "https://registry.faa.gov/aircraftinquiry and pass --faa-zip.")
+    if not zpath or not zpath.exists() or not zipfile.is_zipfile(zpath):
+        size = zpath.stat().st_size if zpath and zpath.exists() else 0
+        print("  ! no valid FAA file" + (f" ({zpath} is {size:,} bytes and not a "
+              "zip; probably the FAA's block page saved under the zip's name)"
+              if size else "") + ". Download ReleasableAircraft.zip in a "
+              "browser and attach it to the faa-data release. Skipping FAA.")
         return
     with zipfile.ZipFile(zpath) as z:
         as_of = dt.date(*z.getinfo("MASTER.txt").date_time[:3]).isoformat()
@@ -218,6 +220,10 @@ def build_sec(out: Path, n_quarters: int):
         p = fetch(SEC_URL.format(q=q), RAW / "sec" / f"{q}_form345.zip", ua)
         if not p:
             continue
+        if not zipfile.is_zipfile(p):
+            print(f"  ! {p.name} is not a zip ({p.stat().st_size:,} bytes); skipping")
+            p.unlink()
+            continue
         got.append(q)
         with zipfile.ZipFile(p) as z:
             sub = {}
@@ -290,10 +296,14 @@ def main():
     a = ap.parse_args()
     out = Path(a.out)
     src = {s.strip() for s in a.sources.split(",")}
-    if "faa" in src:
-        build_faa(out, a.faa_zip)
-    if "sec" in src:
-        build_sec(out, a.sec_quarters)
+    # One source failing must not stop the others or the site deploy.
+    for name, fn in (("faa", lambda: build_faa(out, a.faa_zip)),
+                     ("sec", lambda: build_sec(out, a.sec_quarters))):
+        if name in src:
+            try:
+                fn()
+            except Exception as e:  # noqa: BLE001
+                print(f"  ! {name} failed: {type(e).__name__}: {e}. Skipping.")
 
 
 if __name__ == "__main__":
