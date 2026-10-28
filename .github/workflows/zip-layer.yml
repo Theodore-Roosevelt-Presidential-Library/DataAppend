@@ -42,8 +42,28 @@ jobs:
           key: raw-${{ github.run_id }}
           restore-keys: raw-
 
-      - name: Build
+      - name: Build ZIP layer
         run: python pipeline/build_zip_layer.py --out site
+
+      # Person-level public records. Each source is skipped (not failed) if
+      # its download is refused. SEC requires a real contact email in the
+      # User-Agent: set the repository secret SEC_USER_AGENT to
+      # "TRPL DataAppend name@trlibrary.com".
+      # The FAA blocks automated downloads from cloud servers, so the registry
+      # file is downloaded by hand and attached to the "faa-data" release.
+      - name: Get FAA registry file from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/raw/faa
+          gh release download faa-data -p ReleasableAircraft.zip \
+            -D data/raw/faa --clobber \
+            || echo "No faa-data release yet; FAA layer will be skipped."
+
+      - name: Build person-level layer
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: python pipeline/build_people_layer.py --out site
 
       - name: Sanity check
         run: |

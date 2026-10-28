@@ -6,7 +6,10 @@ site/
 *.env
 .env*
 contacts*
+matches*
+*_matches.csv
 exports/
+ReleasableAircraft.zip
 
 .venv/
 __pycache__/

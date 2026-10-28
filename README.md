@@ -9,15 +9,17 @@ identification. It is being built in layers, starting with free public data.
 | Layer | What it adds | Where it runs | Status |
 |---|---|---|---|
 | 1. ZIP reference | Neighborhood income, education, age, housing and giving context, urban/rural class and distance from Medora for every U.S. ZIP, including PO-box ZIPs | This repo → GitHub Pages (public, aggregate data only) | Built |
-| 2. Person matching | FEC and state campaign-finance records, nonprofit board roles (IRS 990), SEC insider filings, email-domain signals, Library visit and giving history | Private repo, nightly GitHub Action | Planned |
+| 2. Person-level public records | FAA aircraft owners, SEC insiders (built); FEC, NPPES, IRS 990 officers (planned) | This repo → GitHub Pages, one folder per source | In progress |
+| 3. Matching | Compares the Library's contacts with layer 2 locally | Private: your Mac, homelab or a private repo | Built (`pipeline/match_people.py`) |
 
-**Standing rule:** no personal data (names, emails, addresses, contact
-exports) is ever committed to this repository or published to its site.
-Person-level matching belongs in a private repo.
+**Standing rule:** the Library's own contact data (contact exports, match
+results, emails) is never committed to this repository or published to its
+site. Public-record layers republish what the agencies publish, without street
+addresses. Matching against contacts runs privately.
 
 ## Layer 1: ZIP reference API
 
-A static JSON API served from GitHub Pages:
+A static JSON API served from GitHub Pages at **https://append.labs.trlibrary.com**:
 
 - `zip/{ZIP}.json`: one ZIP's record
 - `zips.csv`: every ZIP in one file, for batch joins
@@ -104,8 +106,76 @@ takes a few minutes; later runs reuse the cache.
 
 `.github/workflows/zip-layer.yml` rebuilds and deploys to GitHub Pages monthly,
 on demand (Actions → Build ZIP reference layer → Run workflow), and on any
-change to `pipeline/` or `web/`. One-time setup: **Settings → Pages → Build and
-deployment → Source: GitHub Actions.**
+change to `pipeline/` or `web/`.
+
+One-time setup in **Settings → Pages**:
+
+1. Build and deployment → Source: **GitHub Actions**
+2. Custom domain: **append.labs.trlibrary.com**, then check **Enforce HTTPS**
+   once the certificate is issued
+
+DNS needs no change: `*.labs.trlibrary.com` already points to
+`theodore-roosevelt-presidential-library.github.io`. The domain lives in the
+Pages setting rather than a `CNAME` file, because Actions-based deployments
+ignore that file.
+
+## Layer 2: person-level public records
+
+Built by `pipeline/build_people_layer.py` into the same site, one folder per
+source. Each file republishes the agency's own public data, minus street
+addresses, and every folder has a `meta.json` with source, date and scope.
+
+| Path | Source | Sharded by | Contents |
+|---|---|---|---|
+| `faa/aircraft/{ZIP}.json` | FAA Aircraft Registry | ZIP of registered address | Individual and co-owner registrations: name, city, state, N-number, make, model, year, aircraft and engine type, seats |
+| `sec/insiders/{AB}.json` | SEC Insider Transactions Data Sets (Forms 3/4/5), last 4 quarters | First two letters of surname | Officers, directors and 10% owners: name, filing city/state/ZIP, issuer, ticker, relationship, title, last filing date |
+
+Downloads identify themselves as this tool. Two sources need care:
+
+- **FAA** refuses automated downloads from cloud servers, so the registry file
+  is refreshed by hand (monthly is plenty) and attached to the `faa-data`
+  release, where the Action picks it up:
+
+  ```bash
+  cd ~/Developer/DataAppend
+  curl -L -o ReleasableAircraft.zip https://registry.faa.gov/database/ReleasableAircraft.zip
+  # First time only:
+  gh release create faa-data ReleasableAircraft.zip --title "FAA registry input" \
+      --notes "FAA releasable aircraft database, downloaded by hand."
+  # Every later refresh:
+  gh release upload faa-data ReleasableAircraft.zip --clobber
+  gh workflow run zip-layer.yml
+  rm ReleasableAircraft.zip
+  ```
+
+  If `curl` is refused, open the URL in a browser instead; the file lands in
+  Downloads. Without the GitHub CLI, upload it on the repo's Releases page.
+- **SEC** requires a real contact email in the User-Agent under its fair-access
+  policy. Set the repository secret `SEC_USER_AGENT` to
+  `TRPL DataAppend name@trlibrary.com`.
+
+## Layer 3: matching (run privately)
+
+```bash
+python pipeline/match_people.py contacts.csv matches.csv \
+    --base https://append.labs.trlibrary.com
+```
+
+Reads a CSV with first name, last name, ZIP and (optionally) email and id. It
+fetches only the shard files it needs, by ZIP or surname prefix, so no contact
+details leave the machine. Each match carries a confidence level:
+
+- First name exact (3), nickname such as Bill/William (2), or initial (1)
+- Same ZIP (+2) or same state (+1)
+- Email domain matches an SEC issuer (+2)
+- High = 5 or more, medium = 3–4, low = under 3. Default output is medium and up.
+
+On a synthetic test of 200 aircraft owners (with nicknames, initials and
+dropped leading zeros) and 200 invented people in the same ZIPs, it matched
+all 200 owners and none of the invented people. Real lists will match less
+often because people move and change names.
+
+Never commit `contacts*.csv` or `matches*.csv` (both are in `.gitignore`).
 
 ## License
 
